@@ -79,4 +79,50 @@ describe("sprintfjs", function() {
         assert.equal("foobar", sprintf("%s", function() { return "foobar" }))
         assert.equal(Date.now(), sprintf("%s", Date.now)) // should pass...
     })
+
+    it("should cap numeric precision at the JavaScript limit without throwing", function() {
+        var specifiers = ["e", "f", "g"]
+        specifiers.forEach(function(specifier) {
+            var capped = sprintf("%.100" + specifier, 1.25)
+            assert.equal(sprintf("%.101" + specifier, 1.25), capped)
+            assert.equal(sprintf("%." + new Array(102).join("9") + specifier, 1.25), capped)
+            assert.equal(sprintf("%." + new Array(402).join("9") + specifier, 1.25), capped)
+            assert.equal(sprintf("%1$.101" + specifier, 1.25), capped)
+            assert.equal(sprintf("%(num).101" + specifier, {num: 1.25}), capped)
+            assert.equal(vsprintf("%.101" + specifier, [1.25]), capped)
+        })
+        assert.equal(sprintf("%.0g", 1.25), sprintf("%.1g", 1.25))
+        assert.equal(vsprintf("%.0g", [1.25]), sprintf("%.1g", 1.25))
+    })
+
+    it("should preserve zero precision for non-numeric specifiers", function() {
+        assert.equal("", sprintf("%.0s", "text"))
+        assert.equal("     ", sprintf("%5.0s", "text"))
+    })
+
+    it("should preserve zero and in-range precision for numeric specifiers", function() {
+        assert.equal("1e+0", sprintf("%.0e", 1.25))
+        assert.equal("1", sprintf("%.0f", 1.25))
+        assert.equal((1.25).toExponential(20), sprintf("%.20e", 1.25))
+        assert.equal((1.25).toFixed(20), sprintf("%.20f", 1.25))
+        assert.equal((1.25).toPrecision(21), sprintf("%.21g", 1.25))
+    })
+})
+
+describe("sprintfjs minified distribution", function() {
+    var sprintf_min = require("../dist/sprintf.min.js").sprintf
+
+    it("should cap numeric precision without throwing", function() {
+        var specifiers = ["e", "f", "g"]
+        specifiers.forEach(function(specifier) {
+            var expected = sprintf("%.100" + specifier, 1.25)
+            assert.equal(sprintf_min("%.100" + specifier, 1.25), expected)
+            assert.equal(sprintf_min("%.101" + specifier, 1.25), expected)
+            assert.equal(sprintf_min("%." + new Array(102).join("9") + specifier, 1.25), expected)
+        })
+        assert.equal(sprintf_min("%.0g", 1.25), sprintf("%.1g", 1.25))
+        assert.equal("1e+0", sprintf_min("%.0e", 1.25))
+        assert.equal("1", sprintf_min("%.0f", 1.25))
+        assert.equal("", sprintf_min("%.0s", "text"))
+    })
 })

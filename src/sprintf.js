@@ -13,6 +13,16 @@
         sign: /^[\+\-]/
     }
 
+    /**
+     * largest precision accepted by toExponential/toFixed/toPrecision:
+     * 100 since ES2018, 20 (21 for toPrecision) on older engines
+     */
+    var max_precision = {
+        e: get_max_precision("toExponential", 20),
+        f: get_max_precision("toFixed", 20),
+        g: get_max_precision("toPrecision", 21)
+    }
+
     function sprintf() {
         var key = arguments[0], cache = sprintf.cache
         if (!(cache[key] && cache.hasOwnProperty(key))) {
@@ -73,13 +83,13 @@
                         arg = JSON.stringify(arg, null, match[6] ? parseInt(match[6]) : 0)
                     break
                     case "e":
-                        arg = match[7] ? arg.toExponential(match[7]) : arg.toExponential()
+                        arg = match[7] !== undefined ? arg.toExponential(match[7]) : arg.toExponential()
                     break
                     case "f":
-                        arg = match[7] ? parseFloat(arg).toFixed(match[7]) : parseFloat(arg)
+                        arg = match[7] !== undefined ? parseFloat(arg).toFixed(match[7]) : parseFloat(arg)
                     break
                     case "g":
-                        arg = match[7] ? parseFloat(arg).toPrecision(match[7]) : parseFloat(arg)
+                        arg = match[7] !== undefined ? parseFloat(arg).toPrecision(match[7]) : parseFloat(arg)
                     break
                     case "o":
                         arg = arg.toString(8)
@@ -158,6 +168,12 @@
                 if (arg_names === 3) {
                     throw new Error("[sprintf] mixing positional and named placeholders is not (yet) supported")
                 }
+                if (match[7] !== undefined && max_precision.hasOwnProperty(match[8])) {
+                    match[7] = Math.min(parseInt(match[7], 10), max_precision[match[8]])
+                    if (match[8] === "g" && match[7] === 0) {
+                        match[7] = 1
+                    }
+                }
                 parse_tree[parse_tree.length] = match
             }
             else {
@@ -183,6 +199,16 @@
 
     function str_repeat(input, multiplier) {
         return Array(multiplier + 1).join(input)
+    }
+
+    function get_max_precision(method, fallback) {
+        try {
+            Number.prototype[method].call(0, 100)
+            return 100
+        }
+        catch (e) {
+            return fallback
+        }
     }
 
     /**
