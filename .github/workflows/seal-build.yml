@@ -1,0 +1,77 @@
+name: seal-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: "Optional mocha --grep pattern; empty runs the full suite"
+        required: false
+        default: ""
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NPM_TM_REGISTRY: "https://time-machines-npm.sealsecurity.io/"
+      NPM_TM_TOKEN: "2015-07-10T13:41:29.308000Z"
+    steps:
+      - uses: actions/checkout@v4
+
+      # Modern npm resolves devDependencies through the registry time machine
+      # (release date), then the bundle rebuild, pack and suite run on the
+      # release runtime.
+      - name: Setup Node 20 (dependency install)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install devDependencies (time machine)
+        run: |
+          npm config set registry "$NPM_TM_REGISTRY"
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken="$NPM_TM_TOKEN"
+          npm install --ignore-scripts --no-package-lock
+          ls node_modules/mocha/package.json && node -p "require('./node_modules/mocha/package.json').version"
+
+      # The public tarball was packed with Node 0.12.4 / npm 2.10.1.
+      - name: Setup Node 0.12.4 (release runtime)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "0.12.4"
+
+      # dist/ ships prebuilt; regenerate it from src/ with the upstream
+      # gruntfile (uglify task) so the bundles carry the source fixes.
+      - name: Rebuild dist/ (grunt uglify)
+        run: |
+          node --version
+          node -e "require('grunt').tasks(['uglify'])"
+          ls -la dist
+
+      - name: Pack (npm 2.10.1, staging copy without .git/.github/node_modules)
+        run: |
+          node --version
+          npm --version
+          mkdir -p /tmp/stage /tmp/out
+          tar --exclude=./.git --exclude=./.github --exclude=./node_modules -cf - . | tar -xf - -C /tmp/stage
+          cd /tmp/stage
+          npm pack
+          mv sprintf-js-*.tgz /tmp/out/
+          tar tzvf /tmp/out/sprintf-js-*.tgz
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprintf-js-tgz
+          path: /tmp/out/sprintf-js-*.tgz
+          if-no-files-found: error
+
+      - name: Test (mocha, spec reporter)
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          node --version
+          if [ -n "$TEST_FILTER" ]; then
+            ./node_modules/.bin/mocha --reporter spec --grep "$TEST_FILTER" test/test.js
+          else
+            npm test -- --reporter spec
+          fi
